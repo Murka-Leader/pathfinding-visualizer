@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pathfinding Visualizer</title>
+    <style>
+        /* --- CSS STYLES --- */
+        :root {
+            --bg-color: #0f172a;
+            --grid-border: #1e293b;
+            --cell-size: 25px;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: white;
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            justify-content: center;
+            margin: 0;
+            overflow-x: hidden;
+        }
+
+        .app-container { 
+            width: 90%; 
+            max-width: 1000px; 
+            padding: 20px; 
+            text-align: center; 
+        }
+
+        header h1 { margin-bottom: 5px; }
+        header p { color: #94a3b8; font-size: 0.9rem; }
+
+        .toolbar {
+            margin: 20px 0;
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .legend {
+            display: flex;
+            gap: 15px;
+            font-size: 0.85rem;
+        }
+
+        .legend span { display: flex; align-items: center; gap: 5px; }
+
+        .box {
+            width: 15px;
+            height: 15px;
+            border-radius: 2px;
+        }
+
+        #grid-container {
+            display: grid;
+            grid-template-columns: repeat(30, var(--cell-size));
+            justify-content: center;
+            gap: 1px;
+            background-color: var(--grid-border);
+            border: 1px solid var(--grid-border);
+            user-select: none;
+            margin: 0 auto;
+        }
+
+        .cell {
+            width: var(--cell-size);
+            height: var(--cell-size);
+            background-color: #0f172a;
+            transition: background-color 0.2s ease;
+        }
+
+        /* Cell States */
+        .cell.wall { background-color: #475569; }
+        .cell.start { background-color: #22c55e; }
+        .box.start { background-color: #22c55e; }
+        .cell.target { background-color: #ef4444; }
+        .box.target { background-color: #ef4444; }
+        .box.wall { background-color: #475569; }
+        
+        .cell.visited { animation: visitedAnim 0.3s ease-out forwards; }
+        .cell.path { background-color: #eab308; z-index: 10; }
+
+        @keyframes visitedAnim {
+            0% { transform: scale(0.3); background-color: #3b82f6; border-radius: 100%; }
+            100% { transform: scale(1); background-color: #1d4ed8; }
+        }
+
+        button {
+            padding: 8px 16px;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            background: #334155;
+            color: white;
+            transition: opacity 0.2s;
+        }
+
+        button:hover { opacity: 0.8; }
+        .primary { background: #3b82f6; font-weight: bold; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <h1>Pathfinding Visualizer</h1>
+            <p>Click and drag to draw walls. Press Start to find the path.</p>
+        </header>
+
+        <div class="toolbar">
+            <button id="reset-btn">Clear Board</button>
+            <button id="start-btn" class="primary">Start Dijkstra</button>
+            <div class="legend">
+                <span><div class="box start"></div> Start</span>
+                <span><div class="box target"></div> Target</span>
+                <span><div class="box wall"></div> Wall</span>
+            </div>
+        </div>
+
+        <div id="grid-container"></div>
+    </div>
+
+    <script>
+        /* --- JAVASCRIPT LOGIC --- */
+        const gridContainer = document.getElementById('grid-container');
+        const startBtn = document.getElementById('start-btn');
+        const resetBtn = document.getElementById('reset-btn');
+
+        const ROWS = 20;
+        const COLS = 30;
+        let grid = [];
+        let isMouseDown = false;
+
+        // Initialize Grid
+        function createGrid() {
+            gridContainer.innerHTML = '';
+            grid = [];
+            startBtn.disabled = false;
+            
+            for (let r = 0; r < ROWS; r++) {
+                let row = [];
+                for (let c = 0; c < COLS; c++) {
+                    const cell = document.createElement('div');
+                    cell.classList.add('cell');
+                    
+                    // Mouse Events for drawing walls
+                    cell.onmousedown = (e) => { 
+                        e.preventDefault(); 
+                        isMouseDown = true; 
+                        toggleWall(r, c); 
+                    };
+                    cell.onmouseenter = () => { if (isMouseDown) toggleWall(r, c); };
+                    cell.onmouseup = () => isMouseDown = false;
+                    
+                    gridContainer.appendChild(cell);
+                    row.push({ 
+                        r, c, 
+                        element: cell, 
+                        isWall: false, 
+                        isStart: false, 
+                        isTarget: false, 
+                        distance: Infinity, 
+                        parent: null 
+                    });
+                }
+                grid.push(row);
+            }
+
+            // Document-level mouse up to stop drawing if mouse leaves grid
+            document.onmouseup = () => isMouseDown = false;
+
+            // Set default Start and Target
+            grid[5][5].isStart = true; 
+            grid[5][5].element.classList.add('start');
+            
+            grid[15][25].isTarget = true; 
+            grid[15][25].element.classList.add('target');
+        }
+
+        function toggleWall(r, c) {
+            if (grid[r][c].isStart || grid[r][c].isTarget) return;
+            grid[r][c].isWall = !grid[r][c].isWall;
+            grid[r][c].element.classList.toggle('wall');
+        }
+
+        async function dijkstra() {
+            startBtn.disabled = true;
+            resetBtn.disabled = true;
+
+            const startNode = grid[5][5];
+            const targetNode = grid[15][25];
+            startNode.distance = 0;
+            
+            let unvisited = grid.flat();
+            
+            while (unvisited.length > 0) {
+                // Sort by distance (Dijkstra's core)
+                unvisited.sort((a, b) => a.distance - b.distance);
+                const closest = unvisited.shift();
+                
+                if (closest.isWall) continue;
+                if (closest.distance === Infinity) break;
+                
+                // Visualization
+                if (!closest.isStart && !closest.isTarget) {
+                    closest.element.classList.add('visited');
+                }
+                
+                if (closest === targetNode) {
+                    await drawPath(targetNode);
+                    resetBtn.disabled = false;
+                    return;
+                }
+                
+                await new Promise(r => setTimeout(r, 10));
+                
+                const neighbors = getNeighbors(closest);
+                for (let neighbor of neighbors) {
+                    let newDist = closest.distance + 1;
+                    if (newDist < neighbor.distance) {
+                        neighbor.distance = newDist;
+                        neighbor.parent = closest;
+                    }
+                }
+            }
+            alert("No path found!");
+            resetBtn.disabled = false;
+        }
+
+        function getNeighbors(node) {
+            const neighbors = [];
+            const { r, c } = node;
+            if (r > 0) neighbors.push(grid[r-1][c]);
+            if (r < ROWS - 1) neighbors.push(grid[r+1][c]);
+            if (c > 0) neighbors.push(grid[r][c-1]);
+            if (c < COLS - 1) neighbors.push(grid[r][c+1]);
+            return neighbors.filter(n => !n.isWall);
+        }
+
+        async function drawPath(node) {
+            let curr = node;
+            while (curr) {
+                if (!curr.isStart && !curr.isTarget) {
+                    curr.element.classList.add('path');
+                }
+                curr = curr.parent;
+                await new Promise(r => setTimeout(r, 30));
+            }
+        }
+
+        resetBtn.onclick = createGrid;
+        startBtn.onclick = dijkstra;
+
+        // Initialize on start
+        createGrid();
+    </script>
+</body>
+</html>
