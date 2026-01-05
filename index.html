@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pathfinding Visualizer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <h1>Pathfinding Visualizer</h1>
+            <p>Click and drag to draw walls. Press Start to find the path.</p>
+        </header>
+
+        <div class="toolbar">
+            <button id="reset-btn">Clear Board</button>
+            <button id="start-btn" class="primary">Start Dijkstra</button>
+            <div class="legend">
+                <span><div class="box start"></div> Start</span>
+                <span><div class="box target"></div> Target</span>
+                <span><div class="box wall"></div> Wall</span>
+            </div>
+        </div>
+
+        <div id="grid-container"></div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
